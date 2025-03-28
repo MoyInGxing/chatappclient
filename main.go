@@ -8,8 +8,8 @@ import (
 	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/json"
 	"fmt"
+	"github.com/chatappclient/des"
 	"github.com/chatappclient/ecc"
 	"golang.org/x/net/websocket"
 	"io"
@@ -39,6 +39,22 @@ func (c *CryptoTools) AesCrypto(plaintext []byte) (ciphertext []byte, key []byte
 	ciphertext = make([]byte, aes.BlockSize+len(plaintext))
 	stream := cipher.NewCFBEncrypter(block, iv)
 	stream.XORKeyStream(ciphertext[aes.BlockSize:], plaintext)
+	return
+}
+func (c *CryptoTools) DesCrypto(plaintext []byte) (ciphertext []byte, key []byte, iv []byte) {
+	iv = []byte("12345678")
+	key = []byte("ladykill")
+	
+	ciphertext, err := des.DesEncrypt(plaintext, iv, key)
+	if err != nil {
+		panic("des encrypt error")
+	}
+	return
+}
+func (c *CryptoTools) DesDecrypt(cipherText, iv, key []byte) (plaintext []byte) {
+	iv = []byte("12345678")
+	key = []byte("ladykill")
+	plaintext, _ = des.DesDecrypt(cipherText, iv, key)
 	return
 }
 
@@ -105,6 +121,15 @@ func makeMsg(plaintext []byte) message {
 	msgJson.Iv = iv
 	return msgJson
 }
+func makeMsgForDes(plaintext []byte) message {
+	ciphertext, key, iv := Ctools.DesCrypto(plaintext)
+	msgJson := message{}
+	msgJson.Msg = ciphertext
+	msgJson.Key = key
+	msgJson.Iv = iv
+	return msgJson
+}
+
 func makeMsgForRsa(plaintext []byte) messageForRsa {
 	ciphertext, key := Ctools.RsaCrypto(plaintext)
 	msgJson := messageForRsa{}
@@ -153,12 +178,16 @@ func main() {
 			//crytext, _ := ecc.EccEncrypt(msg[:n], "./eccPublic.pem")
 
 			//ecc sign
-			rText, sText, _ := ecc.ECCSign(msg[:n], "./eccPrivate.pem")
-			var signMsg = messageEccsign{}
-			signMsg.SText = sText
-			signMsg.RText = rText
-			signMsg.Msg = msg[:n]
-			crytext, _ := json.Marshal(signMsg)
+			//rText, sText, _ := ecc.ECCSign(msg[:n], "./eccPrivate.pem")
+			//var signMsg = messageEccsign{}
+			//signMsg.SText = sText
+			//signMsg.RText = rText
+			//signMsg.Msg = msg[:n]
+			//crytext, _ := json.Marshal(signMsg)
+			//_, err := ws.Write(crytext)
+
+			//des
+			crytext, _, _ := Ctools.DesCrypto(msg[:n])
 			_, err := ws.Write(crytext)
 
 			if err == io.EOF {
@@ -172,7 +201,8 @@ func main() {
 
 		msg := make([]byte, 10000)
 		for {
-			n, err := ws.Read(msg)
+			n, _ := ws.Read(msg)
+
 			//AES
 			//var plaintextStruct message = message{}
 			//RSA
@@ -182,28 +212,32 @@ func main() {
 			//if errUnmarshal != nil {
 			//	log.Fatal(errUnmarshal)
 			//}
-			////AES
+
+			//DES
+
+			plaintext := Ctools.DesDecrypt(msg[0:n], []byte{}, []byte{})
+			//AES
 			//
-			////plaintext := Ctools.AesDecrypt(plaintextStruct.Msg, plaintextStruct.Key, plaintextStruct.Iv)
+			//plaintext := Ctools.AesDecrypt(plaintextStruct.Msg, plaintextStruct.Key, plaintextStruct.Iv)
 			//
 			////RSA
 			//plaintext := Ctools.RsaDecrypt(plaintextStruct.Msg, plaintextStruct.Key)
 
 			//ecc
-			//plaintext, err := ecc.EccDecrypt(msg[0:n], "./eccPrivate.pem")
+			//plaintext, _ := ecc.EccDecrypt(msg[0:n], "./eccPrivate.pem")
 			//ecc signed
-			var plaintextStruct messageEccsign = messageEccsign{}
-			json.Unmarshal(msg[0:n], &plaintextStruct)
-			ok, _ := ecc.ECCVerify(plaintextStruct.Msg, plaintextStruct.RText, plaintextStruct.SText, "./eccPublic.pem")
-			fmt.Printf("验证成功？ %t", ok)
-			if err == io.EOF {
-				break
-			}
-			if err != nil {
-				log.Fatal(err)
-				break
-			}
-			fmt.Print(string(plaintextStruct.Msg))
+			//var plaintextStruct messageEccsign = messageEccsign{}
+			//json.Unmarshal(msg[0:n], &plaintextStruct)
+			//ok, _ := ecc.ECCVerify(plaintextStruct.Msg, plaintextStruct.RText, plaintextStruct.SText, "./eccPublic.pem")
+			//fmt.Printf("验证成功？ %t\n", ok)
+			//if err == io.EOF {
+			//	break
+			//}
+			//if err != nil {
+			//	log.Fatal(err)
+			//	break
+			//}
+			fmt.Print(string(plaintext))
 		}
 	}(ws)
 	waitgrount.Wait()
